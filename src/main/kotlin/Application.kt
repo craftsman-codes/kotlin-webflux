@@ -7,11 +7,9 @@ import org.reactivestreams.Subscription
 import org.springframework.beans.factory.getBean
 import org.springframework.context.support.GenericApplicationContext
 import org.springframework.context.support.beans
-import org.springframework.core.Ordered
 import org.springframework.core.io.ClassPathResource
 import org.springframework.data.mongodb.core.ReactiveMongoTemplate
 import org.springframework.data.mongodb.core.SimpleReactiveMongoDatabaseFactory
-import org.springframework.data.mongodb.core.query.Query
 import org.springframework.data.mongodb.repository.support.ReactiveMongoRepositoryFactory
 import org.springframework.http.MediaType.APPLICATION_JSON
 import org.springframework.http.server.reactive.ReactorHttpHandlerAdapter
@@ -20,7 +18,6 @@ import org.springframework.web.cors.reactive.CorsWebFilter
 import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource
 import org.springframework.web.reactive.function.server.*
 import org.springframework.web.reactive.function.server.ServerResponse.ok
-import org.springframework.web.reactive.handler.SimpleUrlHandlerMapping
 import org.springframework.web.reactive.socket.WebSocketHandler
 import org.springframework.web.reactive.socket.WebSocketSession
 import org.springframework.web.reactive.socket.server.WebSocketService
@@ -174,7 +171,7 @@ fun corsConfig(): UrlBasedCorsConfigurationSource {
 fun routes(messageHandler: MessageHandler) = router {
   GET("/api/messages") { messageHandler.findAll() }
   POST("/api/message", accept(APPLICATION_JSON), messageHandler::addMessage)
-  resources("/**", ClassPathResource("static/"))
+  resources("/**", ClassPathResource("public/"))
 }
 
 fun beans() = beans {
