@@ -1,6 +1,5 @@
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.registerKotlinModule
-import com.mongodb.ConnectionString
 import org.reactivestreams.Publisher
 import org.reactivestreams.Subscriber
 import org.reactivestreams.Subscription
@@ -8,9 +7,6 @@ import org.springframework.beans.factory.getBean
 import org.springframework.context.support.GenericApplicationContext
 import org.springframework.context.support.beans
 import org.springframework.core.io.ClassPathResource
-import org.springframework.data.mongodb.core.ReactiveMongoTemplate
-import org.springframework.data.mongodb.core.SimpleReactiveMongoDatabaseFactory
-import org.springframework.data.mongodb.repository.support.ReactiveMongoRepositoryFactory
 import org.springframework.http.MediaType.APPLICATION_JSON
 import org.springframework.http.server.reactive.ReactorHttpHandlerAdapter
 import org.springframework.web.cors.CorsConfiguration
@@ -44,8 +40,16 @@ fun AddMessage.toMessage() = Message(
   user = user
 )
 
-class MessageHandler(private val handler: SocketHandler, private val repository: UserRepository) {
-  fun findAll() = ok().body(repository.findAll())
+class MessageHandler(private val handler: SocketHandler) {
+  private val lock = Object()
+  private val now = ZonedDateTime.now()
+  private var users = Flux.just(
+    Message(now.minusMinutes(10).format(ISO_DATE_TIME), "hello", "anonymous"),
+    Message(now.minusMinutes(5).format(ISO_DATE_TIME), "world", "anonymous"),
+    Message(now.format(ISO_DATE_TIME), "everyone", "anonymous")
+  )
+
+  fun findAll() = ok().body(users)
 
   fun addMessage(req: ServerRequest): Mono<ServerResponse> {
     println("try add")
@@ -55,16 +59,15 @@ class MessageHandler(private val handler: SocketHandler, private val repository:
         add.toMessage()
       }
 
-    return message
-      .flatMap { m ->
-        repository.save(m)
-          .map { m }
-      }
-      .flatMap { m ->
-        handler.sendMessage(m)
+    return message.flatMap { m ->
+      println("add parsed: $m")
+      println("handler: $handler")
 
-        ok().contentType(APPLICATION_JSON).body(Mono.just(m))
-      }
+      handler.sendMessage(m)
+      synchronized(lock) { users = users.concatWith(Mono.just(m)) }
+
+      ok().contentType(APPLICATION_JSON).body(Mono.just(m))
+    }
   }
 }
 
@@ -148,11 +151,6 @@ class SocketHandler: WebSocketHandler, Publisher<Message> {
   }
 }
 
-class UserRepository(val template: ReactiveMongoTemplate) {
-  fun save(message: Message) = template.save(message)
-  fun findAll() = template.findAll(Message::class.java)
-}
-
 // Application.kt
 fun corsConfig(): UrlBasedCorsConfigurationSource {
   val config = CorsConfiguration()
@@ -175,12 +173,9 @@ fun routes(messageHandler: MessageHandler) = router {
 }
 
 fun beans() = beans {
-  bean<ReactiveMongoRepositoryFactory>()
-  bean { ReactiveMongoTemplate(SimpleReactiveMongoDatabaseFactory(ConnectionString("mongodb://localhost:27017/blog"))) }
-  bean<UserRepository>()
   bean<MessageHandler>()
   bean { CorsWebFilter(corsConfig()) }
-  bean<SocketHandler>()
+  bean { SocketHandler() }
   bean { HandshakeWebSocketService(ReactorNettyRequestUpgradeStrategy()) }
   bean("webHandler") { RouterFunctions.toWebHandler(routes(ref())) }
 }
