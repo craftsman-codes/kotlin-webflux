@@ -16,6 +16,7 @@ plugins {
 
 group = "org.example"
 version = "1.0-SNAPSHOT"
+java.sourceCompatibility = JavaVersion.VERSION_1_8
 
 repositories {
   mavenCentral()
@@ -26,6 +27,7 @@ dependencies {
   implementation(kotlin("reflect"))
 
   implementation("org.springframework.boot:spring-boot-starter-webflux")
+  implementation("org.springframework.boot:spring-boot-starter-websocket")
   implementation("io.projectreactor.kotlin:reactor-kotlin-extensions")
   implementation("org.springframework:spring-context") {
     exclude(module = "spring-aop")
