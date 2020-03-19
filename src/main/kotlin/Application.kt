@@ -25,6 +25,7 @@ import org.springframework.web.server.adapter.WebHttpHandlerBuilder
 import reactor.core.publisher.Flux
 import reactor.core.publisher.Mono
 import reactor.netty.http.server.HttpServer
+import java.lang.Integer.parseInt
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter.ISO_DATE_TIME
 import java.util.concurrent.atomic.AtomicBoolean
@@ -205,9 +206,10 @@ fun main() {
     .filter(context.getBean<CorsWebFilter>())
     .build()
 
+  val port = System.getenv("PORT")
   HttpServer
     .create()
-    .port(8080)
+    .port(if (port != null) parseInt(port) else 8080)
     .handle(ReactorHttpHandlerAdapter(httpHandler))
     .bindNow()
     .onDispose()
