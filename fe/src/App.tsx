@@ -36,7 +36,7 @@ export const App = () => {
           onChange={event => setMessage(event.target.value)}
           onKeyUp={event => {
             if (event.ctrlKey && event.key && message.trim()) {
-              add(message, 'anonymous').then(load).then(() => setMessage(''))
+              add(message, 'anonymous').then(() => setMessage(''))
             }
           }}
         />
