@@ -1,21 +1,20 @@
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.registerKotlinModule
-import org.reactivestreams.Publisher
-import org.reactivestreams.Subscriber
-import org.reactivestreams.Subscription
 import org.springframework.context.support.GenericApplicationContext
 import org.springframework.context.support.beans
 import org.springframework.core.io.ClassPathResource
 import org.springframework.core.io.Resource
-import org.springframework.http.MediaType.APPLICATION_JSON
 import org.springframework.http.MediaType.TEXT_HTML
 import org.springframework.http.server.reactive.ReactorHttpHandlerAdapter
 import org.springframework.web.cors.CorsConfiguration
 import org.springframework.web.cors.reactive.CorsWebFilter
 import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource
-import org.springframework.web.reactive.function.server.*
-import org.springframework.web.reactive.function.server.ServerResponse.ok
+import org.springframework.web.reactive.function.server.RouterFunctions
+import org.springframework.web.reactive.function.server.ServerResponse
+import org.springframework.web.reactive.function.server.body
+import org.springframework.web.reactive.function.server.router
 import org.springframework.web.reactive.socket.WebSocketHandler
+import org.springframework.web.reactive.socket.WebSocketMessage
 import org.springframework.web.reactive.socket.WebSocketSession
 import org.springframework.web.reactive.socket.server.support.HandshakeWebSocketService
 import org.springframework.web.reactive.socket.server.upgrade.ReactorNettyRequestUpgradeStrategy
@@ -32,110 +31,56 @@ import java.time.format.DateTimeFormatter.ISO_DATE_TIME
 data class Message(val createdAt: String, val message: String, val user: String)
 data class AddMessage(val message: String, val user: String)
 
+fun AddMessage.toMessage() = Message(
+  createdAt = ZonedDateTime.now().format(ISO_DATE_TIME),
+  message = message,
+  user = user
+)
+
+class SocketHandler(
+  private val objectMapper: ObjectMapper,
+  private val messageRepository: MessageRepository
+): WebSocketHandler {
+  override fun handle(session: WebSocketSession): Mono<Void> {
+    return session
+      .send(
+        session.receive()
+          .map {
+            val message = parseAddMessage(it).toMessage()
+            messageRepository.addMessage(message)
+            message
+          }
+          .map(objectMapper::writeValueAsString)
+          .map(session::textMessage)
+    )
+  }
+
+  private fun parseAddMessage(webSocketMessage: WebSocketMessage) =
+    objectMapper.readValue(webSocketMessage.payloadAsText, AddMessage::class.java)
+}
+
 // MessageHandler.kt
-class MessageHandler(private val handler: SocketHandler) {
+class MessageRepository {
   private val lock = Object()
   private val now = ZonedDateTime.now()
-  private var users = Flux.just(
+  private var messages = Flux.just(
     Message(now.minusMinutes(10).format(ISO_DATE_TIME), "hello", "anonymous"),
     Message(now.minusMinutes(5).format(ISO_DATE_TIME), "world", "anonymous"),
     Message(now.format(ISO_DATE_TIME), "everyone", "anonymous")
   )
 
-  fun findAll() = ok().body(users)
-
-  fun addMessage(req: ServerRequest): Mono<ServerResponse> {
-    val message: Mono<Message> = req.bodyToMono(AddMessage::class.java)
-      .map { it.toMessage() }
-
-    return message.flatMap { m ->
-      synchronized(lock) { users = users.concatWith(Mono.just(m)) }
-      handler.sendMessage(m)
-
-      ok().build()
-    }
-  }
-
-  private fun AddMessage.toMessage() = Message(
-    createdAt = ZonedDateTime.now().format(ISO_DATE_TIME),
-    message = message,
-    user = user
-  )
-}
-
-// SocketHandler.kt
-class SocketHandler: WebSocketHandler, Publisher<Message> {
-  private val lock = Object()
-  private var subscriptions = listOf<MySubscription>()
-
-  override fun subscribe(subscriber: Subscriber<in Message>?) {
-    if (subscriber != null) {
-      val subscription = MySubscription(subscriber) { sub ->
-        synchronized(lock) { subscriptions = subscriptions - sub }
-      }
-      synchronized(lock) {
-        subscriptions = subscriptions + subscription
-        subscriber.onSubscribe(subscription)
-      }
-    }
-  }
-
-  fun sendMessage(message: Message) = subscriptions.forEach { s -> s.prepareMessage(message) }
-
-  override fun handle(session: WebSocketSession): Mono<Void> = session.send(
-    Flux.from(this)
-      .map { message ->
-        """{"createdAt": "${message.createdAt}", "message": "${message.message}", "user": "${message.user}"}"""
-      }
-      .map(session::textMessage)
-  )
-
-  class MySubscription(
-    val subscriber: Subscriber<in Message>,
-    val unsubscribe: (MySubscription) -> Unit
-  ): Subscription {
-    private val lock = Object()
-    private var isCanceled = false
-    private var messages: List<Message> = listOf()
-    private var requested: Int = 0
-
-    override fun cancel() = synchronized(lock) {
-      isCanceled = true
-      unsubscribe(this)
-    }
-
-    override fun request(n: Long) = synchronized(lock) {
-      if (!isCanceled) {
-        requested += n.toInt()
-        send()
-      }
-    }
-
-    fun prepareMessage(message: Message) = synchronized(lock) {
-      if (!isCanceled) {
-        messages = messages + message
-        send()
-      }
-    }
-
-    private fun send() {
-      val toSend = messages.take(requested)
-      toSend.forEach(subscriber::onNext)
-
-      messages = messages.drop(toSend.size)
-      requested -= toSend.size
-    }
-  }
+  fun getMessages(): Flux<Message> = messages
+  fun addMessage(message: Message) = synchronized(lock) { messages = messages.concatWith(Mono.just(message)) }
 }
 
 // Handler.kt
 class Handler(
-  messageHandler: MessageHandler,
+  messageRepository: MessageRepository,
   private val webSocketHandler: WebSocketHandler,
   private val index: Resource
 ): WebHandler {
   private val webSocketService = HandshakeWebSocketService(ReactorNettyRequestUpgradeStrategy())
-  private val webHandler = RouterFunctions.toWebHandler(router(messageHandler))
+  private val webHandler = RouterFunctions.toWebHandler(router(messageRepository))
 
   override fun handle(exchange: ServerWebExchange): Mono<Void> {
     val elements = exchange.request.path.pathWithinApplication().elements()
@@ -146,10 +91,9 @@ class Handler(
       webHandler.handle(exchange)
   }
 
-  private fun router(messageHandler: MessageHandler) = router {
+  private fun router(messageRepository: MessageRepository) = router {
     GET("/") { ok().contentType(TEXT_HTML).bodyValue(index)}
-    GET("/api/messages") { messageHandler.findAll() }
-    POST("/api/message", accept(APPLICATION_JSON), messageHandler::addMessage)
+    GET("/api/messages") { ServerResponse.ok().body(messageRepository.getMessages()) }
     resources("/**", ClassPathResource("public/"))
   }
 }
@@ -168,14 +112,13 @@ fun corsConfig() = UrlBasedCorsConfigurationSource().apply {
 }
 
 fun beans(index: Resource) = beans {
-  bean<MessageHandler>()
+  bean { ObjectMapper().registerKotlinModule() }
+  bean<MessageRepository>()
   bean<SocketHandler>()
   bean("webHandler") { Handler(ref(), ref(), index) }
 }
 
 fun main() {
-  ObjectMapper().registerKotlinModule()
-
   val context = GenericApplicationContext().apply {
     beans(getResource("/public/index.html"))
       .initialize(this)

@@ -17,7 +17,7 @@ export const App = () => {
     reconnectInterval: 3000,
   }), []);
 
-  const [sendMessage, lastMessage] = useWebSocket(`${wsHost}/socket`, STATIC_OPTIONS);
+  const [sendMessage, lastMessage, readyState] = useWebSocket(`${wsHost}/socket`, STATIC_OPTIONS);
 
   useEffect(() => {
     if (lastMessage) {
@@ -29,18 +29,19 @@ export const App = () => {
     .then(response => response.json())
     .then(result => setMessages(result))
 
-  const add = (message: string, user: string) => fetch(`${host}/api/message`, {
-    method: 'POST',
-    headers: {
-      'Accept': 'application/json',
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({message, user})
-  })
+  const add = (message: string, user: string) => Promise.resolve(sendMessage(JSON.stringify({message, user})))
 
   useEffect(() => { load() }, [])
 
+  const ReadyState = [
+    "CONNECTING",
+    "OPEN",
+    "CLOSING",
+    "CLOSED"
+  ]
+
   return <Paper>
+    Websocket is {ReadyState[readyState]}
     <Grid container>
       <Grid item lg={9}>
         <List>
