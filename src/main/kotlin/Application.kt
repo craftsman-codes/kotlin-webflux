@@ -1,5 +1,8 @@
+import com.fasterxml.jackson.databind.DeserializationFeature
+import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.registerKotlinModule
+import org.reactivestreams.Publisher
 import org.springframework.context.support.GenericApplicationContext
 import org.springframework.context.support.beans
 import org.springframework.core.io.ClassPathResource
@@ -10,8 +13,6 @@ import org.springframework.web.cors.CorsConfiguration
 import org.springframework.web.cors.reactive.CorsWebFilter
 import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource
 import org.springframework.web.reactive.function.server.RouterFunctions
-import org.springframework.web.reactive.function.server.ServerResponse
-import org.springframework.web.reactive.function.server.body
 import org.springframework.web.reactive.function.server.router
 import org.springframework.web.reactive.socket.WebSocketHandler
 import org.springframework.web.reactive.socket.WebSocketMessage
@@ -29,7 +30,11 @@ import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter.ISO_DATE_TIME
 
 data class Message(val createdAt: String, val message: String, val user: String)
-data class AddMessage(val message: String, val user: String)
+
+sealed class Command
+data class AddMessage(val message: String, val user: String): Command()
+data class TableFrame(val frame: String, val user: String): Command()
+object LoadMessages: Command()
 
 fun AddMessage.toMessage() = Message(
   createdAt = ZonedDateTime.now().format(ISO_DATE_TIME),
@@ -45,18 +50,41 @@ class SocketHandler(
     return session
       .send(
         session.receive()
-          .map {
-            val message = parseAddMessage(it).toMessage()
-            messageRepository.addMessage(message)
-            message
-          }
-          .map(objectMapper::writeValueAsString)
-          .map(session::textMessage)
+          .flatMap { handleMessage(session, readCommand(it)) }
     )
   }
 
-  private fun parseAddMessage(webSocketMessage: WebSocketMessage) =
-    objectMapper.readValue(webSocketMessage.payloadAsText, AddMessage::class.java)
+  private fun handleMessage(session: WebSocketSession, incomingMessage: Command): Publisher<WebSocketMessage> {
+    return when (incomingMessage) {
+      is AddMessage -> {
+        val message = incomingMessage.toMessage()
+        messageRepository.addMessage(message)
+        return Mono.just(session.textMessage(objectMapper.writeValueAsString(message)))
+      }
+      is LoadMessages ->
+        messageRepository.getMessages().map { session.textMessage(objectMapper.writeValueAsString(it)) }
+      is TableFrame ->
+        Mono.just(session.textMessage(objectMapper.writeValueAsString(incomingMessage)))
+    }
+  }
+
+  private inline fun <reified T>deserialize(json: JsonNode): T = objectMapper.treeToValue(json, T::class.java)
+
+  private fun readCommand(webSocketMessage: WebSocketMessage): Command {
+    val json = objectMapper.readTree(webSocketMessage.payloadAsText)
+    val messageType = json.get("messageType")?.asText()
+
+    return when (messageType) {
+      "TableFrame" -> deserialize<TableFrame>(json)
+      "AddMessage" -> deserialize<AddMessage>(json)
+      "LoadMessages" -> LoadMessages
+      else -> {
+        val error = "Unsupported WebSocketMessage: ${messageType ?: "No messageType provided"}"
+        println(error)
+        throw Exception(error)
+      }
+    }
+  }
 }
 
 // MessageHandler.kt
@@ -69,18 +97,22 @@ class MessageRepository {
     Message(now.format(ISO_DATE_TIME), "everyone", "anonymous")
   )
 
-  fun getMessages(): Flux<Message> = messages
+  fun getMessages(): Flux<Message> = messages.takeLast(20)
   fun addMessage(message: Message) = synchronized(lock) { messages = messages.concatWith(Mono.just(message)) }
 }
 
 // Handler.kt
 class Handler(
-  messageRepository: MessageRepository,
   private val webSocketHandler: WebSocketHandler,
   private val index: Resource
 ): WebHandler {
-  private val webSocketService = HandshakeWebSocketService(ReactorNettyRequestUpgradeStrategy())
-  private val webHandler = RouterFunctions.toWebHandler(router(messageRepository))
+  private val webSocketService = HandshakeWebSocketService(ReactorNettyRequestUpgradeStrategy().apply {
+    maxFramePayloadLength = 1 * 1024 * 1024
+  })
+  private val webHandler = RouterFunctions.toWebHandler(router {
+    GET("/") { ok().contentType(TEXT_HTML).bodyValue(index)}
+    resources("/**", ClassPathResource("public/"))
+  })
 
   override fun handle(exchange: ServerWebExchange): Mono<Void> {
     val elements = exchange.request.path.pathWithinApplication().elements()
@@ -91,11 +123,6 @@ class Handler(
       webHandler.handle(exchange)
   }
 
-  private fun router(messageRepository: MessageRepository) = router {
-    GET("/") { ok().contentType(TEXT_HTML).bodyValue(index)}
-    GET("/api/messages") { ServerResponse.ok().body(messageRepository.getMessages()) }
-    resources("/**", ClassPathResource("public/"))
-  }
 }
 
 // Application.kt
@@ -112,10 +139,13 @@ fun corsConfig() = UrlBasedCorsConfigurationSource().apply {
 }
 
 fun beans(index: Resource) = beans {
-  bean { ObjectMapper().registerKotlinModule() }
+  bean { ObjectMapper()
+    .registerKotlinModule()
+    .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+  }
   bean<MessageRepository>()
   bean<SocketHandler>()
-  bean("webHandler") { Handler(ref(), ref(), index) }
+  bean("webHandler") { Handler(ref(), index) }
 }
 
 fun main() {
