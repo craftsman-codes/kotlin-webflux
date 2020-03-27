@@ -104,7 +104,6 @@ export const App = () => {
   }
 
   return <Paper>
-    Websocket is {ReadyState[readyState]}
     <Grid container>
       <Grid item lg={9}>
         <button onClick={() => {stream?.getVideoTracks()[0].stop()}} >stop</button>
@@ -113,6 +112,7 @@ export const App = () => {
         <canvas width={960} height={540} ref={canvasRef} />
       </Grid>
       <Grid item lg={3}>
+        <div>Websocket is {ReadyState[readyState]}</div>
         <TextField
           variant="filled"
           label="User"
