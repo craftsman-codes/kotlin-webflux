@@ -33,7 +33,7 @@ data class Message(val createdAt: String, val message: String, val user: String)
 
 sealed class Command
 data class AddMessage(val message: String, val user: String): Command()
-data class TableFrame(val frame: String, val user: String): Command()
+data class VideoFrame(val frame: String, val user: String): Command()
 object LoadMessages: Command()
 
 fun AddMessage.toMessage() = Message(
@@ -63,7 +63,7 @@ class SocketHandler(
       }
       is LoadMessages ->
         messageRepository.getMessages().map { session.textMessage(objectMapper.writeValueAsString(it)) }
-      is TableFrame ->
+      is VideoFrame ->
         Mono.just(session.textMessage(objectMapper.writeValueAsString(incomingMessage)))
     }
   }
@@ -75,7 +75,7 @@ class SocketHandler(
     val messageType = json.get("messageType")?.asText()
 
     return when (messageType) {
-      "TableFrame" -> deserialize<TableFrame>(json)
+      "VideoFrame" -> deserialize<VideoFrame>(json)
       "AddMessage" -> deserialize<AddMessage>(json)
       "LoadMessages" -> LoadMessages
       else -> {

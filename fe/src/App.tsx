@@ -43,7 +43,7 @@ export const App = () => {
     video
   }
 
-  type MessageType = 'AddMessage' | 'LoadMessages' | 'TableFrame'
+  type MessageType = 'AddMessage' | 'LoadMessages' | 'VideoFrame'
   const send = useCallback(
     (messageType: MessageType, content: object = {}) => sendMessage(JSON.stringify({...content, messageType})),
     [sendMessage]
@@ -98,7 +98,7 @@ export const App = () => {
         .then((blob: Blob) => {
           const reader = new FileReader();
           reader.readAsDataURL(blob)
-          reader.onloadend = (() => { send('TableFrame', {frame: reader.result, user: 'test'}) })
+          reader.onloadend = (() => { send('VideoFrame', {frame: reader.result, user: 'test'}) })
         })
     }
   }
