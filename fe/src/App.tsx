@@ -92,7 +92,7 @@ export const App = () => {
   }, [constraints])
 
   const sendSnapshot = () => {
-    if (stream) {
+    if (ReadyState[readyState] === 'OPEN' && stream && stream?.getVideoTracks()[0]?.readyState === 'live') {
       // @ts-ignore ImageCapture
       new ImageCapture(stream.getVideoTracks()[0]).takePhoto()
         .then((blob: Blob) => {
