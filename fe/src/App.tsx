@@ -106,7 +106,7 @@ export const App = () => {
   return <Paper>
     <Grid container>
       <Grid item lg={9}>
-        <button onClick={() => {stream?.getVideoTracks()[0].stop()}} >stop</button>
+        <button onClick={() => {stream?.getVideoTracks()[0]?.stop()}} >stop</button>
         <button onClick={sendSnapshot} >send</button>
         <ul>{errors.map(error => <li>{error}</li>)}</ul>
         <canvas width={960} height={540} ref={canvasRef} />
