@@ -72,9 +72,9 @@ export const App = () => {
   useEffect(() => {
     if (canvasRef.current) {
       const ctx = canvasRef.current.getContext('2d')
-      if (ctx && context !== ctx) { setContext(ctx) }
+      if (ctx) { setContext(ctx) }
     }
-  }, [context])
+  }, [])
 
   useEffect(() => {
     navigator.mediaDevices.getUserMedia(constraints)
