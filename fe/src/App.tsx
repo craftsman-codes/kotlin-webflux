@@ -3,7 +3,7 @@ import {Grid, List, ListItem, Paper, TextField} from "@material-ui/core"
 import useWebSocket from 'react-use-websocket';
 
 const {hostname, port, protocol} = window.location
-const wsHost = `${protocol === 'https:' ? 'wss:' : 'ws:'}//${hostname}:${port === '3002' ? 8080 : port}`
+const wsHost = `${protocol === 'https:' ? 'wss:' : 'ws:'}//${hostname}:${['3000', '3001', '3002', '3003'].includes(port) ? 8080 : port}`
 
 export const App = () => {
   const [messages, setMessages] = useState<{user: string, message: string, createdAt: string}[]>([])
