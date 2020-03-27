@@ -1,5 +1,5 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react'
-import {Grid, List, ListItem, Paper, TextField} from "@material-ui/core"
+import {Grid, List, ListItem, Paper, TextField} from '@material-ui/core'
 import useWebSocket from 'react-use-websocket';
 
 const {hostname, port, protocol} = window.location
@@ -29,19 +29,6 @@ export const App = () => {
 
   const [sendMessage, lastMessage, readyState] = useWebSocket(`${wsHost}/socket`, STATIC_OPTIONS);
 
-  const video: MediaTrackConstraints = {
-    width: { ideal: 1920 },
-    height: { ideal: 1080 },
-    noiseSuppression: true,
-    frameRate: {
-      ideal: 1,
-      max: 1
-    }
-  }
-  const constraints: MediaStreamConstraints = {
-    audio: false,
-    video
-  }
 
   type MessageType = 'AddMessage' | 'LoadMessages' | 'VideoFrame'
   const send = useCallback(
@@ -77,19 +64,29 @@ export const App = () => {
   }, [])
 
   useEffect(() => {
-    navigator.mediaDevices.getUserMedia(constraints)
-      .then(setStream)
-      .catch(function (error) {
-        if (error.name === 'ConstraintNotSatisfiedError') {
-          setErrors(prev => [...prev, 'The resolution x px is not supported by your device.']);
-        } else if (error.name === 'PermissionDeniedError') {
-          setErrors(prev => [...prev, 'Permissions have not been granted to use your camera and ' +
-          'microphone, you need to allow the page access to your devices in ' +
-          'order for the demo to work.']);
+    if (ReadyState[readyState] === 'OPEN' && !stream) {
+      navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+          // width: {ideal: 1920},
+          // height: {ideal: 1080},
+          noiseSuppression: true,
+          frameRate: {ideal: 1, max: 1}
         }
-        setErrors(prev => [...prev, 'getUserMedia error: ' + error.name]);
       })
-  }, [constraints])
+        .then(setStream)
+        .catch(function (error) {
+          if (error.name === 'ConstraintNotSatisfiedError') {
+            setErrors(prev => [...prev, 'The resolution x px is not supported by your device.']);
+          } else if (error.name === 'PermissionDeniedError') {
+            setErrors(prev => [...prev, 'Permissions have not been granted to use your camera and ' +
+            'microphone, you need to allow the page access to your devices in ' +
+            'order for the demo to work.']);
+          }
+          setErrors(prev => [...prev, 'getUserMedia error: ' + error.name]);
+        })
+    }
+  }, [readyState, ReadyState, stream])
 
   const sendSnapshot = () => {
     if (ReadyState[readyState] === 'OPEN' && stream && stream?.getVideoTracks()[0]?.readyState === 'live') {
