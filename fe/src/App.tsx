@@ -21,10 +21,10 @@ export const App = () => {
     reconnectInterval: 3000,
   }), []);
   const ReadyState = [
-    "CONNECTING",
-    "OPEN",
-    "CLOSING",
-    "CLOSED"
+    'CONNECTING',
+    'OPEN',
+    'CLOSING',
+    'CLOSED'
   ]
 
   const [sendMessage, lastMessage, readyState] = useWebSocket(`${wsHost}/socket`, STATIC_OPTIONS);
@@ -51,7 +51,7 @@ export const App = () => {
   const add = (message: string, user: string) => Promise.resolve(send('AddMessage', {message, user}))
 
   useEffect(() => {
-    if (!lastMessage && ReadyState[readyState] === "OPEN") { send("LoadMessages") }
+    if (!lastMessage && ReadyState[readyState] === 'OPEN') { send('LoadMessages') }
   }, [readyState, lastMessage, ReadyState, send])
 
   useEffect(() => {
