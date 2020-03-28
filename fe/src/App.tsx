@@ -1,30 +1,20 @@
-import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react'
-import {Grid, List, ListItem, Paper, TextField} from '@material-ui/core'
+import React, {useCallback, useEffect, useMemo, useState} from 'react'
+import {Button, Grid, List, ListItem, Paper, TextField} from '@material-ui/core'
 import useWebSocket from 'react-use-websocket';
 
 const {hostname, port, protocol} = window.location
 const wsHost = `${protocol === 'https:' ? 'wss:' : 'ws:'}//${hostname}:${['3000', '3001', '3002', '3003'].includes(port) ? 8080 : port}`
 
 const TableTop = (args: {frame: string|null}) => {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const [context, setContext] = useState<CanvasRenderingContext2D>()
+  const small = {width: 480, height: 270};
+  const large = {width: 960, height: 540};
+  const [dimensions, setDimensions] = useState(small)
 
-  useEffect(() => {
-    if (canvasRef.current) {
-      const ctx = canvasRef.current.getContext('2d')
-      if (ctx) { setContext(ctx) }
-    }
-  }, [])
+  const toggleSize = () => {
+    setDimensions(prev => prev.width === 480 ? large : small)
+  }
 
-  useEffect(() => {
-    if (context && args.frame) {
-      const image = new Image()
-      image.src = args.frame
-      image.onload = () => { context?.drawImage(image, 0, 0, 960, 540) }
-    }
-  }, [args.frame])
-
-  return <canvas width={480} height={270} ref={canvasRef} />
+  return <img onClick={toggleSize} style={dimensions} src={args.frame || undefined} />
 }
 
 export const App = () => {
@@ -34,6 +24,7 @@ export const App = () => {
   const [errors, setErrors] = useState<string[]>([])
   const [stream, setStream] = useState<MediaStream>()
   const [sessions, setSessions] = useState<Record<string, string|null>>({})
+  const [camera, setCamera] = useState(false)
 
   const STATIC_OPTIONS = useMemo(() => ({
     shouldReconnect: () => true,
@@ -76,9 +67,7 @@ export const App = () => {
           setSessions(prev => Object.fromEntries(Object.entries(prev).filter(([id]) => id != incomingMessage.leaving)))
           break;
         case 'SessionVideoFrame':
-          console.log('try store frame', sessions, sessions[incomingMessage.sessionId])
-          if (sessions[incomingMessage.sessionId] === null) {
-            console.log('store frame')
+          if (sessions.hasOwnProperty(incomingMessage.sessionId)) {
             setSessions((prev) => ({...prev, [incomingMessage.sessionId]: incomingMessage.frame}))
           }
           break;
@@ -89,7 +78,7 @@ export const App = () => {
 
 
   useEffect(() => {
-    if (ReadyState[readyState] === 'OPEN' && !stream) {
+    if (camera) {
       navigator.mediaDevices.getUserMedia({
         audio: false,
         video: {
@@ -110,8 +99,13 @@ export const App = () => {
           }
           setErrors(prev => [...prev, 'getUserMedia error: ' + error.name]);
         })
+    } else {
+      stream?.getTracks()
+        .forEach((track) => track.stop())
+      setStream(undefined)
+      setErrors([])
     }
-  }, [readyState, ReadyState, stream])
+  }, [camera])
 
   const sendSnapshot = () => {
     if (ReadyState[readyState] === 'OPEN' && stream && stream?.getVideoTracks()[0]?.readyState === 'live') {
@@ -125,12 +119,19 @@ export const App = () => {
     }
   }
 
+  const sendTextMessage = () => {
+    if (message.trim()) {
+      add(message.trim(), user)
+        .then(() => setMessage(''))
+    }
+  }
+
   return <Paper>
     <Grid container>
       <Grid container item lg={10}>
         {
           Object.entries(sessions).map(([id, frame]) =>
-            <Grid item lg={6}>
+            <Grid item>
               <div>{id}</div>
               <TableTop key={id} frame={frame} />
             </Grid>
@@ -139,8 +140,10 @@ export const App = () => {
       </Grid>
       <Grid item lg={2}>
         <div>Websocket is {ReadyState[readyState]}</div>
-        <button onClick={() => {stream?.getVideoTracks()[0]?.stop()}} >stop</button>
-        <button onClick={sendSnapshot} >send</button>
+        <Button
+          variant="contained"
+          onClick={() => setCamera(prev => !prev)}>Toggle video ({camera ? 'On' : 'Off'})</Button>
+        <Button variant="contained" onClick={sendSnapshot} >Send snapshot</Button>
         <ul>{errors.map(error => <li>{error}</li>)}</ul>
         <TextField
           variant="filled"
@@ -155,12 +158,9 @@ export const App = () => {
           autoFocus={true}
           value={message}
           onChange={event => setMessage(event.target.value)}
-          onKeyUp={event => {
-            if (event.ctrlKey && event.key && message.trim()) {
-              add(message.trim(), user).then(() => setMessage(''))
-            }
-          }}
+          onKeyUp={event => { if (event.ctrlKey && event.key) { sendTextMessage() } }}
         />
+        <Button variant="contained" onClick={sendTextMessage}>Send Message (ctrl+⏎)</Button>
         <List>
           {messages.map(m => <ListItem key={m.createdAt}>{m.createdAt.slice(11, 19)} [{m.user}]: {m.message}</ListItem>)}
         </List>
