@@ -5,15 +5,35 @@ import useWebSocket from 'react-use-websocket';
 const {hostname, port, protocol} = window.location
 const wsHost = `${protocol === 'https:' ? 'wss:' : 'ws:'}//${hostname}:${['3000', '3001', '3002', '3003'].includes(port) ? 8080 : port}`
 
+const TableTop = (args: {frame: string|null}) => {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const [context, setContext] = useState<CanvasRenderingContext2D>()
+
+  useEffect(() => {
+    if (canvasRef.current) {
+      const ctx = canvasRef.current.getContext('2d')
+      if (ctx) { setContext(ctx) }
+    }
+  }, [])
+
+  useEffect(() => {
+    if (context && args.frame) {
+      const image = new Image()
+      image.src = args.frame
+      image.onload = () => { context?.drawImage(image, 0, 0, 960, 540) }
+    }
+  }, [args.frame])
+
+  return <canvas width={480} height={270} ref={canvasRef} />
+}
+
 export const App = () => {
   const [messages, setMessages] = useState<{user: string, message: string, createdAt: string}[]>([])
   const [message, setMessage] = useState<string>('')
   const [user, setUser] = useState<string>('anonymous')
   const [errors, setErrors] = useState<string[]>([])
   const [stream, setStream] = useState<MediaStream>()
-  const [context, setContext] = useState<CanvasRenderingContext2D>()
-
-  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const [sessions, setSessions] = useState<Record<string, string|null>>({})
 
   const STATIC_OPTIONS = useMemo(() => ({
     shouldReconnect: () => true,
@@ -42,26 +62,31 @@ export const App = () => {
   }, [readyState, lastMessage, ReadyState, send])
 
   useEffect(() => {
-    if (context && lastMessage) {
+    if (lastMessage) {
       const incomingMessage = JSON.parse(lastMessage.data);
-      if (incomingMessage.message) {
-        setMessages(prev => [...prev, incomingMessage])
-      } else {
-        if (incomingMessage.frame) {
-          const image = new Image()
-          image.src = incomingMessage.frame
-          image.onload = () => { context?.drawImage(image, 0, 0, 960, 540) }
-        }
+      console.log(incomingMessage)
+      switch (incomingMessage.type) {
+        case 'Message':
+          setMessages(prev => [...prev, incomingMessage])
+          break;
+        case 'JoiningUser':
+          setSessions(prev => ({...prev, [incomingMessage.joining]: null}))
+          break;
+        case 'LeavingUser':
+          setSessions(prev => Object.fromEntries(Object.entries(prev).filter(([id]) => id != incomingMessage.leaving)))
+          break;
+        case 'SessionVideoFrame':
+          console.log('try store frame', sessions, sessions[incomingMessage.sessionId])
+          if (sessions[incomingMessage.sessionId] === null) {
+            console.log('store frame')
+            setSessions((prev) => ({...prev, [incomingMessage.sessionId]: incomingMessage.frame}))
+          }
+          break;
+        default: break;
       }
     }
-  }, [lastMessage, context])
+  }, [lastMessage])
 
-  useEffect(() => {
-    if (canvasRef.current) {
-      const ctx = canvasRef.current.getContext('2d')
-      if (ctx) { setContext(ctx) }
-    }
-  }, [])
 
   useEffect(() => {
     if (ReadyState[readyState] === 'OPEN' && !stream) {
@@ -71,7 +96,7 @@ export const App = () => {
           // width: {ideal: 1920},
           // height: {ideal: 1080},
           noiseSuppression: true,
-          frameRate: {ideal: 1, max: 1}
+          // frameRate: {ideal: 1, max: 1}
         }
       })
         .then(setStream)
@@ -102,14 +127,21 @@ export const App = () => {
 
   return <Paper>
     <Grid container>
-      <Grid item lg={9}>
+      <Grid container item lg={10}>
+        {
+          Object.entries(sessions).map(([id, frame]) =>
+            <Grid item lg={6}>
+              <div>{id}</div>
+              <TableTop key={id} frame={frame} />
+            </Grid>
+          )
+        }
+      </Grid>
+      <Grid item lg={2}>
+        <div>Websocket is {ReadyState[readyState]}</div>
         <button onClick={() => {stream?.getVideoTracks()[0]?.stop()}} >stop</button>
         <button onClick={sendSnapshot} >send</button>
         <ul>{errors.map(error => <li>{error}</li>)}</ul>
-        <canvas width={960} height={540} ref={canvasRef} />
-      </Grid>
-      <Grid item lg={3}>
-        <div>Websocket is {ReadyState[readyState]}</div>
         <TextField
           variant="filled"
           label="User"
