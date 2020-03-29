@@ -30,19 +30,19 @@ import reactor.netty.http.server.HttpServer
 import java.lang.Integer.parseInt
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter.ISO_DATE_TIME
+import java.util.*
 
 sealed class Event(val type: String)
-data class Message(val createdAt: String, val message: String, val user: String): Event("Message")
-data class SessionVideoFrame(val sessionId: String, val frame: String, val user: String): Event("SessionVideoFrame")
-data class JoiningUser(val joining: String): Event("JoiningUser")
-data class LeavingUser(val leaving: String): Event("LeavingUser")
+data class Message(val id: String, val createdAt: String, val message: String, val user: String): Event("Message")
+data class VideoFrame(val sessionId: String, val frame: String, val user: String): Event("VideoFrame")
 
 sealed class Command
 data class AddMessage(val message: String, val user: String): Command()
-data class VideoFrame(val frame: String, val user: String): Command()
+data class SendSnapshot(val sessionId: String, val frame: String, val user: String): Command()
 object LoadMessages: Command()
 
 fun AddMessage.toMessage() = Message(
+  id = UUID.randomUUID().toString(),
   createdAt = ZonedDateTime.now().format(ISO_DATE_TIME),
   message = message,
   user = user
@@ -51,12 +51,8 @@ fun AddMessage.toMessage() = Message(
 class EventBus: Publisher<Event> {
   private val lock = Object()
   private var sinks = emptyList<FluxSink<Event>>()
-  init {
-    println("constructed: ${this::class.java}")
-  }
 
   fun next(event: Event) = sinks.forEach {
-    println("doing next")
     try { it.next(event) } catch (e: Exception) {}
   }
 
@@ -69,43 +65,21 @@ class EventBus: Publisher<Event> {
   }
 }
 
-class SessionRepository {
-  private val lock = Object()
-  private var sessions = emptyList<String>()
-
-  fun registerSession(id: String) = synchronized(lock) {
-    sessions = sessions + id
-  }
-  fun unregisterSession(id: String) = synchronized(lock) {
-    sessions = sessions - id
-  }
-
-  fun users() = sessions
-}
-
 class SocketHandler(
   private val objectMapper: ObjectMapper,
   private val messageRepository: MessageRepository,
-  private val sessionRepository: SessionRepository,
   private val eventBus: EventBus
 ): WebSocketHandler {
   override fun handle(session: WebSocketSession): Mono<Void> {
-    val sessionId = session.id
-    sessionRepository.registerSession(sessionId)
-    eventBus.next(JoiningUser(sessionId))
     val eventPipe = Flux.merge(
-      session.receive().flatMap { Flux.fromIterable(handleMessage(session, readCommand(it))) },
+      session.receive().flatMap { Flux.fromIterable(handleMessage(readCommand(it))) },
       Flux.from(eventBus)
     )
       .map { event -> session.textMessage(objectMapper.writeValueAsString(event))}
-    return session.send(eventPipe).doOnTerminate {
-      println("$sessionId is leaving")
-      sessionRepository.unregisterSession(sessionId)
-      eventBus.next(LeavingUser(sessionId))
-    }
+    return session.send(eventPipe)
   }
 
-  private fun handleMessage(session: WebSocketSession, incomingMessage: Command): List<Event> {
+  private fun handleMessage(incomingMessage: Command): List<Event> {
     return when (incomingMessage) {
       is AddMessage -> {
         val message = incomingMessage.toMessage()
@@ -114,9 +88,9 @@ class SocketHandler(
         emptyList()
       }
       is LoadMessages ->
-        messageRepository.getMessages() + sessionRepository.users().map { JoiningUser(it) }
-      is VideoFrame -> {
-        eventBus.next(SessionVideoFrame(session.id, incomingMessage.frame, incomingMessage.user))
+        messageRepository.getMessages()
+      is SendSnapshot -> {
+        eventBus.next(VideoFrame(incomingMessage.sessionId, incomingMessage.frame, incomingMessage.user))
         emptyList()
       }
     }
@@ -126,15 +100,14 @@ class SocketHandler(
 
   private fun readCommand(webSocketMessage: WebSocketMessage): Command {
     val json = objectMapper.readTree(webSocketMessage.payloadAsText)
-    val messageType = json.get("messageType")?.asText()
+    val type = json.get("type")?.asText()
 
-    return when (messageType) {
-      "VideoFrame" -> deserialize<VideoFrame>(json)
+    return when (type) {
+      "SendSnapshot" -> deserialize<SendSnapshot>(json)
       "AddMessage" -> deserialize<AddMessage>(json)
       "LoadMessages" -> LoadMessages
       else -> {
-        val error = "Unsupported WebSocketMessage: ${messageType ?: "No messageType provided"}"
-        println(error)
+        val error = "Unsupported WebSocketMessage: ${type ?: "No type provided"}"
         throw Exception(error)
       }
     }
@@ -193,7 +166,6 @@ fun beans(index: Resource) = beans {
     .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
   }
   bean<MessageRepository>()
-  bean<SessionRepository>()
   bean<EventBus>()
   bean<SocketHandler>()
   bean("webHandler") { Handler(ref(), index) }
