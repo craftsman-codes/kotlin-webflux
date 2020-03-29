@@ -42,7 +42,8 @@ export const App = () => {
   const [stream, setStream] = useState<MediaStream>()
   const [sessions, setSessions] = useState<Record<string, VideoFrame>>({})
   const [camera, setCamera] = useState(false)
-    
+  const [delay, setDelay] = useState(5)
+
   const sessionId = loadSessionId()
 
   const STATIC_OPTIONS = useMemo(() => ({
@@ -133,15 +134,15 @@ export const App = () => {
     }
   }
 
-  const usedSendSnapShot = useCallback(sendSnapshot, [ReadyState, readyState, stream])
+  const sendSnapShotCallback = useCallback(sendSnapshot, [ReadyState, readyState, stream])
 
   useEffect(() => {
     if (camera) {
-      const timeout = setInterval(() => usedSendSnapShot(), 1000)
+      const timeout = setInterval(() => sendSnapShotCallback(), delay * 1000)
 
       return () => {clearTimeout(timeout)}
     }
-  }, [camera, usedSendSnapShot])
+  }, [camera, delay, sendSnapShotCallback])
 
   const sendTextMessage = () => {
     if (message.trim()) {
@@ -166,8 +167,18 @@ export const App = () => {
         <Button
           variant="contained"
           onClick={() => setCamera(prev => !prev)}>Toggle video ({camera ? 'On' : 'Off'})</Button>
-        <Button variant="contained" onClick={sendSnapshot} >Send snapshot</Button>
         <ul>{errors.map(error => <li>{error}</li>)}</ul>
+        <TextField
+          variant="filled"
+          label="Snapshot delay (s)"
+          value={delay}
+          type="number"
+          onChange={event => {
+            if (parseInt(event.target.value, 10) > 0) {
+              setDelay(parseInt(event.target.value, 10 ))
+            }
+          }}
+        />
         <TextField
           variant="filled"
           label="User"
