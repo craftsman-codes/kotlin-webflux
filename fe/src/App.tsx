@@ -9,16 +9,25 @@ const wsHost = `${protocol === 'https:' ? 'wss:' : 'ws:'}//${hostname}:${['3000'
 type VideoFrame = {sessionId: string, user: string, frame: string, rotation: number}
 
 const TableTop = (args: {frame: VideoFrame}) => {
-  const small = {width: 480, height: 270};
-  const large = {width: 960, height: 540};
-  const [dimensions, setDimensions] = useState(small)
+  const small = {
+    width: 480,
+    height: 270,
+    border: 'solid lightgrey 2px',
+  }
+  const large = {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: '100%',
+    height: '100%',
+  }
+  const [dimensions, setDimensions] = useState<Record<string, any>>(small)
 
   const toggleSize = () => setDimensions(prev => prev.width === 480 ? large : small)
 
   return <Paper style={{padding: '10px'}}>
     <img alt={args.frame.user} onClick={toggleSize} style={{
       ...dimensions,
-      border: 'solid lightgrey 2px',
       transform: `rotate(${args.frame.rotation}deg)`
     }} src={args.frame.frame} />
     <Typography variant="subtitle1">{args.frame.user}</Typography>
