@@ -34,11 +34,11 @@ import java.util.*
 
 sealed class Event(val type: String)
 data class Message(val id: String, val createdAt: String, val message: String, val user: String): Event("Message")
-data class VideoFrame(val sessionId: String, val frame: String, val user: String): Event("VideoFrame")
+data class VideoFrame(val sessionId: String, val frame: String, val user: String, val rotation: Int): Event("VideoFrame")
 
 sealed class Command
 data class AddMessage(val message: String, val user: String): Command()
-data class SendSnapshot(val sessionId: String, val frame: String, val user: String): Command()
+data class SendSnapshot(val sessionId: String, val frame: String, val user: String, val rotation: Int): Command()
 object LoadMessages: Command()
 
 fun AddMessage.toMessage() = Message(
@@ -90,7 +90,7 @@ class SocketHandler(
       is LoadMessages ->
         messageRepository.getMessages()
       is SendSnapshot -> {
-        eventBus.next(VideoFrame(incomingMessage.sessionId, incomingMessage.frame, incomingMessage.user))
+        eventBus.next(VideoFrame(incomingMessage.sessionId, incomingMessage.frame, incomingMessage.user, incomingMessage.rotation))
         emptyList()
       }
     }

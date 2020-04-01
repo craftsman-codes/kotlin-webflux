@@ -6,7 +6,7 @@ import {v4 as uuid} from 'uuid'
 const {hostname, port, protocol} = window.location
 const wsHost = `${protocol === 'https:' ? 'wss:' : 'ws:'}//${hostname}:${['3000', '3001', '3002', '3003'].includes(port) ? 8080 : port}`
 
-type VideoFrame = {sessionId: string, user: string, frame: string}
+type VideoFrame = {sessionId: string, user: string, frame: string, rotation: number}
 
 const TableTop = (args: {frame: VideoFrame}) => {
   const small = {width: 480, height: 270};
@@ -16,7 +16,11 @@ const TableTop = (args: {frame: VideoFrame}) => {
   const toggleSize = () => setDimensions(prev => prev.width === 480 ? large : small)
 
   return <Paper style={{padding: '10px'}}>
-    <img alt={args.frame.user} onClick={toggleSize} style={{...dimensions, border: 'solid lightgrey 2px'}} src={args.frame.frame} />
+    <img alt={args.frame.user} onClick={toggleSize} style={{
+      ...dimensions,
+      border: 'solid lightgrey 2px',
+      transform: `rotate(${args.frame.rotation}deg)`
+    }} src={args.frame.frame} />
     <Typography variant="subtitle1">{args.frame.user}</Typography>
   </Paper>
 }
@@ -43,6 +47,7 @@ export const App = () => {
   const [sessions, setSessions] = useState<Record<string, VideoFrame>>({})
   const [camera, setCamera] = useState(false)
   const [delay, setDelay] = useState(5)
+  const [degrees, setDegrees] = useState(0)
 
   const sessionId = loadSessionId()
 
@@ -129,7 +134,12 @@ export const App = () => {
         .then((blob: Blob) => {
           const reader = new FileReader();
           reader.readAsDataURL(blob)
-          reader.onloadend = (() => { send('SendSnapshot', {sessionId: sessionId, frame: reader.result, user: user}) })
+          reader.onloadend = (() => { send('SendSnapshot', {
+            sessionId: sessionId,
+            frame: reader.result,
+            user: user,
+            rotation: degrees
+          }) })
         })
     }
   }
@@ -179,6 +189,10 @@ export const App = () => {
             }
           }}
         />
+        <Button
+          variant="contained"
+          onClick={() => setDegrees(prev => (prev + 90) % 360)}
+        >Rotation</Button>
         <TextField
           variant="filled"
           label="User"
