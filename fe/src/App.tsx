@@ -112,6 +112,9 @@ export const App = () => {
             // height: {ideal: 1080},
             noiseSuppression: true,
             // frameRate: {ideal: 1, max: 1}
+            facingMode: {
+              ideal: "environment"
+            }
           }
         })
           .then(setStream)
