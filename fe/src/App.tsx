@@ -142,17 +142,25 @@ export const App = () => {
   const sendSnapshot = () => {
     if (ReadyState[readyState] === 'OPEN' && stream?.getVideoTracks()[0]?.readyState === 'live') {
       // @ts-ignore ImageCapture
-      new ImageCapture(stream.getVideoTracks()[0]).takePhoto()
-        .then((blob: Blob) => {
-          const reader = new FileReader();
-          reader.readAsDataURL(blob)
-          reader.onloadend = (() => { send('SendSnapshot', {
-            sessionId: sessionId,
-            frame: reader.result,
-            user: user,
-            rotation: degrees
-          }) })
-        })
+      console.log(typeof ImageCapture.prototype.takePhoto)
+      // @ts-ignore ImageCapture
+      if (typeof ImageCapture === 'function' && typeof ImageCapture.prototype.takePhoto === 'function') {
+        // @ts-ignore ImageCapture
+        new ImageCapture(stream.getVideoTracks()[0]).takePhoto()
+          .then((blob: Blob) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(blob)
+            reader.onloadend = (() => { send('SendSnapshot', {
+              sessionId: sessionId,
+              frame: reader.result,
+              user: user,
+              rotation: degrees
+            }) })
+          })
+      } else {
+        // @ts-ignore ImageCapture
+        setErrors(prev => [...prev, `Cannot ImageCapture.prototype.takePhoto (${typeof ImageCapture === 'function' ? 'No .takePhoto' : 'No ImageCapture'}) not implemented`])
+      }
     }
   }
 
