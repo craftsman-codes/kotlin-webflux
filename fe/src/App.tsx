@@ -55,7 +55,7 @@ export const App = () => {
   const [stream, setStream] = useState<MediaStream>()
   const [sessions, setSessions] = useState<Record<string, VideoFrame>>({})
   const [camera, setCamera] = useState(false)
-  const [delay, setDelay] = useState(5)
+  const [delay, setDelay] = useState(3)
   const [degrees, setDegrees] = useState(0)
 
   const sessionId = loadSessionId()
